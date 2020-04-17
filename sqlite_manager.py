@@ -26,7 +26,7 @@ def insert(id=None, counter=None):
 
 def update_value(id=None, count=None):
     with sqlite3.connect('BD.db') as connection:
-        update = f'UPDATE {id} SET {count} = {count} + 1'
+        update = f'UPDATE counter SET count = {count + 1} WHERE id = {id}'
         cursor = connection.cursor()
         cursor.execute(update)
         cursor.fetchall()
