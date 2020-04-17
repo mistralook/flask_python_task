@@ -1,24 +1,30 @@
-import json, sqlite3
+import json
 from sqlite_manager import insert, select, update_value
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, request, send_file
 
 app = Flask(__name__)
 
 
 @app.route('/counter')
 def counter():
-    id = request.args.get('id')
-    update(id)
+    current_id = request.args.get('id')
+    update(current_id)
+    return send_file('static/img/dot.png', attachment_filename='dot.png')
 
 
 @app.route('/get_count')
 def get_count():
-    return True
+    current_id = request.args.get('id')
+    count = select(current_id)[0][0]
+    json_file = json.dumps({current_id: count})
+    with open('package.json', 'w') as file:
+        file.write(json_file)
+    return send_file('package.json')
 
 
-def update(id):
+def update(current_id):
     try:
-        count = select(id)[0][0]
-        update_value(id, count)
+        count = select(current_id)[0][0]
+        update_value(current_id, count)
     except:
-        insert(id, 1)
+        insert(current_id, 1)
