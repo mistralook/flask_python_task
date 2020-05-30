@@ -1,33 +1,49 @@
 import sqlite3
+import functools
 
 
-def select(id):
-    with sqlite3.connect('BD.db') as connection:
-        sql = f'SELECT count FROM counter WHERE id={id}'
-        print(sql)
-        cursor = connection.cursor()
-        result = list(cursor.execute(sql))
-        cursor.fetchall()
-        cursor.close()
-    return result
+def make_criteria(**kwargs) -> str:
+    return " and ".join([f'{key} = {value}'
+                         for key, value in kwargs.items()])
 
 
-def insert(id=None, counter=None):
-    if not id and not counter:
-        sql = f'INSERT INTO counter DEFAULT VALUES'
-    else:
-        sql = f'INSERT INTO counter VALUES ({id}, {counter})'
-    with sqlite3.connect('BD.db') as connection:
-        cursor = connection.cursor()
-        cursor.execute(sql)
-        cursor.fetchall()
-        cursor.close()
+def sql_operations(func):
+    @functools.wraps(func)
+    def wrapper(table, *args, **kwargs):
+        with sqlite3.connect("BD.db") as connection:
+            cursor = connection.cursor()
+            sql = func(table, *args, **kwargs)
+            result = list(cursor.execute(sql))
+            cursor.fetchall()
+            cursor.close()
+        return result
+
+    return wrapper
 
 
-def update_value(id=None, count=None):
-    with sqlite3.connect('BD.db') as connection:
-        update = f'UPDATE counter SET count = {count + 1} WHERE id = {id}'
-        cursor = connection.cursor()
-        cursor.execute(update)
-        cursor.fetchall()
-        cursor.close()
+@sql_operations
+def select(table, *args, **kwargs):
+    criteria = make_criteria(**kwargs)
+    return f'SELECT {",".join(args)} FROM {table} WHERE {criteria}'
+
+
+@sql_operations
+def insert(table, **kwargs):
+    insert_values = ','.join(map(str, kwargs.values()))
+    return f"INSERT INTO {table} VALUES ({insert_values})"
+
+
+@sql_operations
+def update_value(table, setter: tuple, **kwargs):
+    cr = make_criteria(**kwargs)
+    return f"UPDATE {table} SET {setter[0]}={setter[1]} WHERE {cr}"
+
+
+@sql_operations
+def insert_if_not_exist(table, **kwargs):
+    cr = make_criteria(**kwargs)
+    return f"""INSERT INTO {table} ({', '.join(kwargs.keys())})
+            SELECT {', '.join([f'{v} as {k}' for k,  v in kwargs.items()])}
+            FROM {table} WHERE NOT EXISTS(SELECT * FROM {table} 
+            WHERE {cr}) LIMIT 1;"""
+
