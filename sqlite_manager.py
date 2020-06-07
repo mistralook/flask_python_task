@@ -9,10 +9,10 @@ def make_criteria(**kwargs) -> str:
 
 def sql_operations(func):
     @functools.wraps(func)
-    def wrapper(table, *args, **kwargs):
-        with sqlite3.connect("BD.db") as connection:
+    def wrapper(db_name, table, *args, **kwargs):
+        with sqlite3.connect(db_name) as connection:
             cursor = connection.cursor()
-            sql = func(table, *args, **kwargs)
+            sql = func(db_name, table, *args, **kwargs)
             result = list(cursor.execute(sql))
             cursor.fetchall()
             cursor.close()
@@ -22,28 +22,28 @@ def sql_operations(func):
 
 
 @sql_operations
-def select(table, *args, **kwargs):
+def select(db, table, *args, **kwargs):
     criteria = make_criteria(**kwargs)
     return f'SELECT {",".join(args)} FROM {table} WHERE {criteria}'
 
 
 @sql_operations
-def insert(table, **kwargs):
-    insert_values = ','.join(map(str, kwargs.values()))
-    return f"INSERT INTO {table} VALUES ({insert_values})"
-
-
-@sql_operations
-def update_value(table, setter: tuple, **kwargs):
+def update_value(db, table, setter: tuple, **kwargs):
     cr = make_criteria(**kwargs)
     return f"UPDATE {table} SET {setter[0]}={setter[1]} WHERE {cr}"
 
 
 @sql_operations
-def insert_if_not_exist(table, **kwargs):
+def insert_if_not_exist(db, table, **kwargs):
     cr = make_criteria(**kwargs)
     return f"""INSERT INTO {table} ({', '.join(kwargs.keys())})
-            SELECT {', '.join([f'{v} as {k}' for k,  v in kwargs.items()])}
-            FROM {table} WHERE NOT EXISTS(SELECT * FROM {table} 
-            WHERE {cr}) LIMIT 1;"""
+    SELECT {', '.join([f'{v} as {k}' for k, v in kwargs.items()])}
+    FROM {table} WHERE NOT EXISTS(SELECT * FROM {table} WHERE {cr})
+    LIMIT 1;"""
 
+
+@sql_operations
+def select_for_days(db, period, page):
+    return f"""SELECT * FROM unique_visits
+    WHERE last_visit BETWEEN datetime('now', '{period}')
+    AND datetime('now', 'localtime') AND id = '{page}';"""

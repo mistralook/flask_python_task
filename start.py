@@ -1,68 +1,53 @@
 import json
-from datetime import datetime
-
-from flask import Flask, send_file, render_template, request, redirect
-
-from sqlite_manager import insert, select, update_value, \
-    insert_if_not_exist
+from collections import Counter
+from sqlite_manager import select, select_for_days
+from flask import Flask, make_response, send_file, request
+from secrets import token_urlsafe
+from utils import country_by_ip, update
+from geoip2 import database
 
 app = Flask(__name__)
+reader = database.Reader('CountryDB/GeoLite2-Country.mmdb')
 
 
-@app.route('/counter', methods=['GET', 'POST'])
+@app.route('/counter', methods=['GET'])
 def counter():
     current_id = request.args.get('id')
-    user_id = request.remote_addr
-    update(current_id, user_id)
-    return send_file('static/img/dot.png', attachment_filename='dot.png')
+    resp = make_response(send_file('img/1x1.png', cache_timeout=-1))
+    cookie = request.cookies.get('some cookie')
+    if cookie is None:
+        cookie = token_urlsafe(5)
+    update("BD.db", current_id, cookie)
+    if cookie:
+        resp.set_cookie('some cookie', str(cookie), max_age=1296000)
+    return resp
 
 
-@app.route('/get_count', methods=['GET', 'POST'])
+@app.route('/get_count', methods=['GET'])
 def get_count():
+    country_visits = Counter()
     current_id = request.args.get('id')
-    all_count = select('counter', 'count', **{'id': current_id})[0][0]
-    # unique_count = select('unique_visits', '*', **{})[0][0]
-    json_file = json.dumps({'all_visits': all_count})
-    #                        'unique_visits': unique_count})
-    return json_file
+    is_country_statistic = request.args.get('country')
+    if is_country_statistic == '1':
+        ip = select("BD.db", 'unique_visits', 'ip',
+                    **{'id': current_id})
+        for address in ip:
+            country = country_by_ip(address[0], reader)
+            country_visits[country] += 1
+        return country_visits
+    elif is_country_statistic == '0' or not is_country_statistic:
+        all_count = select("BD.db", 'counter',
+                           'count', **{'id   ': current_id})[0][0]
+        unique_day = select_for_days("BD.db", '-1 day', current_id)
+        unique_week = select_for_days("BD.db", '-6 days', current_id)
+        unique_month = select_for_days("BD.db", '-30 days', current_id)
+        json_file = json.dumps({'all_visits': all_count,
+                                'unique_last_day': len(unique_day),
+                                'unique_last_week': len(unique_week),
+                                'unique_last_month': len(unique_month)})
+
+        return json_file
 
 
-def update(current_id, user_id):
-    update_format = "\'{}\'".format(
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    ip_format = "\'{}\'".format(user_id)
-    insert_if_not_exist('counter', id=current_id)
-    count = select('counter', 'count', id=current_id)[0][0]
-    update_value('counter', ('count', count + 1), id=current_id)
-    insert_if_not_exist('unique_visits', user=ip_format,
-                        page_id=current_id)
-    update_value('unique_visits', ('last_visit', update_format),
-                 user=ip_format, page_id=current_id)
-
-
-@app.route('/period', methods=['POST'])
-def period():
-    user_id = request.form['id']
-    if user_id:
-        return redirect(f'/get_count?id={user_id}')
-    else:
-        raise Exception('Incomplete input')
-
-
-@app.route('/form', methods=['GET', 'POST'])
-def my_form():
-    return render_template('form.html')
-
-
-@app.route('/first', methods=['POST'])
-def first_test():
-    return render_template('first.html')
-
-
-@app.route('/second', methods=['POST'])
-def second_test():
-    return render_template('second.html')
-
-
-if __name__ == 'main':
+if __name__ == '__main__':
     app.run()
